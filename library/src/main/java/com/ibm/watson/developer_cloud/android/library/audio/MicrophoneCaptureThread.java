@@ -70,37 +70,76 @@ final class MicrophoneCaptureThread extends Thread {
       }
     }
 
-
     while (!stop) {
+
+      /*
+
+      public int read(@NonNull short[] audioData, int offsetInShorts, int sizeInShorts,
+        @ReadMode int readMode) {
+        if (mState != STATE_INITIALIZED || mAudioFormat == AudioFormat.ENCODING_PCM_FLOAT) {
+            return ERROR_INVALID_OPERATION;
+        }
+
+        if ((readMode != READ_BLOCKING) && (readMode != READ_NON_BLOCKING)) {
+            Log.e(TAG, "AudioRecord.read() called with invalid blocking mode");
+            return ERROR_BAD_VALUE;
+        }
+
+        if ( (audioData == null) || (offsetInShorts < 0 ) || (sizeInShorts < 0)
+                || (offsetInShorts + sizeInShorts < 0)  // detect integer overflow
+                || (offsetInShorts + sizeInShorts > audioData.length)) {
+            return ERROR_BAD_VALUE;
+        }
+
+        return native_read_in_short_array(audioData, offsetInShorts, sizeInShorts,
+                readMode == READ_BLOCKING);
+    }
+
+       */
+
       int r = record.read(buffer, 0, buffer.length);
 
-      // calculate amplitude and volume
-      long v = 0;
-      for (int i = 0; i < r; i++) {
-        v += buffer[i] * buffer[i];
-      }
-
-      double amplitude = v / (double) r;
-      double volume = 0;
-      if (amplitude > 0) {
-        volume = 10 * Math.log10(amplitude);
-      }
-
-      // convert short buffer to bytes
-      ByteBuffer bufferBytes = ByteBuffer.allocate(r * 2); // 2 bytes per short
-      bufferBytes.order(ByteOrder.LITTLE_ENDIAN); // save little-endian byte from short buffer
-      bufferBytes.asShortBuffer().put(buffer, 0, r);
-      byte[] bytes = bufferBytes.array();
-
-      if (opusEncoded) {
-        try {
-          encoder.onStart(); //must be called before writing
-          encoder.encodeAndWrite(bytes);
-        } catch (Exception e) {
-          e.printStackTrace();
-        }
+      if (AudioRecord.ERROR_INVALID_OPERATION == r) {
+          // if the object wasn't properly initialized
+          Log.e(TAG, "ERROR: ERROR_INVALID_OPERATION - Denotes a failure due to the improper use of a method.");
+          stop = true;
+      } else if (AudioRecord.ERROR_BAD_VALUE == r) {
+        // if the parameters don't resolve to valid data and indexes
+        Log.e(TAG, "ERROR: ERROR_BAD_VALUE - Denotes a failure due to the use of an invalid value.");
+        Log.e(TAG, "Buffer Length: " + buffer.length);
+        stop = true;
+      } else if (AudioRecord.ERROR == r) {
+        Log.e(TAG, "ERROR: ERROR - Denotes a generic operation failure.");
+        stop = true;
       } else {
-        consumer.consume(bytes, amplitude, volume);
+        // calculate amplitude and volume
+        long v = 0;
+        for (int i = 0; i < r; i++) {
+          v += buffer[i] * buffer[i];
+        }
+
+        double amplitude = v / (double) r;
+        double volume = 0;
+        if (amplitude > 0) {
+          volume = 10 * Math.log10(amplitude);
+        }
+
+        // convert short buffer to bytes
+        ByteBuffer bufferBytes = ByteBuffer.allocate(r * 2); // 2 bytes per short
+        bufferBytes.order(ByteOrder.LITTLE_ENDIAN); // save little-endian byte from short buffer
+        bufferBytes.asShortBuffer().put(buffer, 0, r);
+        byte[] bytes = bufferBytes.array();
+
+        if (opusEncoded) {
+          try {
+            encoder.onStart(); //must be called before writing
+            encoder.encodeAndWrite(bytes);
+          } catch (Exception e) {
+            e.printStackTrace();
+          }
+        } else {
+          consumer.consume(bytes, amplitude, volume);
+        }
       }
 
     }
